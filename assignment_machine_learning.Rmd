@@ -1,0 +1,140 @@
+---
+title: "Machine Learning course Assignment"
+date: "December 15, 2014"
+output: html_document
+---
+
+
+**INTRODUCTION**
+
+The goal of this project was to predict the quality of a physical activity given a set of predictors.
+
+**Data pre-processing**
+
+First I loaded the data into R and checked the dimensions and data structure
+
+```{r}
+Train<-read.csv(file="~/Documents/machinelearning/data/pml-training.csv", header=TRUE)
+Test<-read.csv(file="~/Documents/machinelearning/data/pml-testing.csv", header=TRUE)
+
+dim(Train)
+dim(Test)
+
+```
+
+Once data was introduced I started with a series of procedures to filter the data. First I extracted the first 7 data columns, which only contains accessory information. Following this filter I selected only the numerical columhns and took out the columns with a large number of NAs.
+
+```{r}
+strain<-Train[,-c(1:7)]
+strain[strain==""]<-NA
+strain[strain=="#DIV/0!"]<-NA
+
+x <- sapply(strain, is.numeric)
+str<-strain[ ,c(x)]
+
+str$classe<-strain$classe
+str<-str[,colSums(is.na(str)) < 19000]
+```
+
+After these first filters I divided the original dataset in training and testing.
+
+```{r}
+library(caret)
+training <- createDataPartition(y = str$classe, p = 0.7, list = FALSE)
+trData <- str[training, ]
+testVData <- str[-training, ]
+
+dim(testVData)
+dim(trData)
+
+```
+
+Then in the training dataset I looked for correlated variables. 
+
+```{r}
+
+M<-abs(cor(trData[,-53]))
+diag(M)=0
+which(M>0.8,arr.ind=T)
+
+plot(trData[,3],trData[,1])
+plot(trData[,25],trData[,26])
+```
+
+I eliminated the most correlated variables, and subset both test datasets (the one I made and the original one) to the final variables used to build the model.
+
+```{r}
+trData<-trData[,-c(1,2,9,8,10,11,18,21,26,31,33,34,36,46)]
+
+n<-names(trData)
+stest<-Test[,which(names(Test) %in% n)]
+testVData<-testVData[,which(names(testVData) %in% n)]
+```
+
+**Modelling procedures**
+
+To obtain a realiable model I used a random forest, with the algorithm implemented in the Caret package. I created a Training control parameter to limit the Cross-Validation to 3. When doing the tests I also tested a CV of 4 folds, however the accuracy improvement was minimum. Using a smaller k value will influenciate in the out-of-sample error values, obtaining a less precise estimate, but reducing the variance. Like this using a 3-fold CV I can overcome a potential overfitting error, with a small out of sample error value.
+
+
+```{r}
+
+control1 <- trainControl(method = "cv", number = 3, allowParallel = TRUE)
+
+modFit<-train(classe~., data=trData, method="rf",trControl = control1, prox=FALSE)
+
+```
+
+After building the model I used the tested data I build in order to have a better estimate of the out-of-sample error.
+
+```{r}
+predictions <- predict(modFit, testVData)
+
+outOfSampleError.accuracy <- sum(predictions == testVData$classe)/length(predictions)
+outOfSampleError.accuracy
+
+outOfSampleError <- 1 - outOfSampleError.accuracy
+```
+
+Finally I applied the model to the given test dataset and build the text files to submit the result.
+
+```{r}
+pred<-predict(modFit,stest)
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+setwd("~/Documents/machinelearning")
+
+pml_write_files(pred)
+```
+
+**Results**
+
+Model results showed high accuracy value using a 3 fold CV. The low value of the OOB error (out-of-sample error) reinforces the good performance of the model.
+
+```{r}
+
+print(modFit)
+
+modFit$finalModel
+
+plot(modFit, log = "y", lwd = 2, main = "Random forest accuracy", xlab = "Predictors", ylab = "Accuracy")
+
+```
+
+The results of the prediction were:
+
+```{r}
+pred
+```
+
+The out of samples error using an external test dataset was:
+
+```{r}
+outOfSampleError * 100
+```
+
